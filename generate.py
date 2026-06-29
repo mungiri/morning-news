@@ -18,6 +18,7 @@ except Exception:
     pass
 
 BASE = Path(__file__).resolve().parent
+SCRAP_DIR = BASE / "scraps"            # md는 이 하위 폴더에만 보관
 FNAME_RE = re.compile(r"뉴스스크랩_(\d{4})-(\d{2})-(\d{2})\.md$")
 WEEKDAY_KR = ["월", "화", "수", "목", "금", "토", "일"]
 
@@ -40,10 +41,17 @@ def extract(md):
     return headlines, keywords
 
 
+def relocate_md():
+    """루트에 저장된 md를 scraps/ 하위 폴더로 쓸어담는다(저장 위치 무관하게 정리)."""
+    SCRAP_DIR.mkdir(exist_ok=True)
+    for p in BASE.glob("뉴스스크랩_*.md"):
+        p.replace(SCRAP_DIR / p.name)  # 같은 이름이 있으면 덮어씀
+
+
 def collect_reports():
     """본문(markdown)은 내장하지 않고, 가벼운 메타데이터(manifest)만 만든다."""
     reports = []
-    for p in BASE.glob("뉴스스크랩_*.md"):
+    for p in SCRAP_DIR.glob("뉴스스크랩_*.md"):
         m = FNAME_RE.search(p.name)
         if not m:
             continue
@@ -72,6 +80,7 @@ def collect_reports():
 
 
 def build():
+    relocate_md()
     reports = collect_reports()
     if not reports:
         print("⚠️  뉴스스크랩_*.md 파일을 찾지 못했어요. 폴더를 확인해 주세요.")
@@ -256,7 +265,7 @@ TEMPLATE = r"""<!DOCTYPE html>
 // 가벼운 목록만 내장(본문 X). 본문은 날짜를 열 때 해당 md 파일을 fetch.
 const MANIFEST = __MANIFEST__;
 const cache = {};   // 한 번 불러온 본문은 캐시
-function mdUrl(date){ return './' + encodeURIComponent('뉴스스크랩_' + date + '.md'); }
+function mdUrl(date){ return './scraps/' + encodeURIComponent('뉴스스크랩_' + date + '.md'); }
 async function fetchReport(i){
   const d = MANIFEST[i].date;
   if(cache[d] != null) return cache[d];
