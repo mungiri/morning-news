@@ -112,7 +112,9 @@ TEMPLATE = r"""<!DOCTYPE html>
   }
   .sidehead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 2px 0}
   .brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:18px;
-    letter-spacing:-.3px;margin:0}
+    letter-spacing:-.3px;margin:0;background:none;border:none;padding:0;cursor:pointer;
+    color:inherit;font-family:inherit}
+  .brand:hover{color:var(--brand)}
   .brand-sub{font-size:11.5px;color:var(--muted);margin:4px 4px 14px}
   .search{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:10px;
     background:var(--bg);color:var(--ink);font-size:13px;margin-bottom:12px;outline:none}
@@ -167,6 +169,33 @@ TEMPLATE = r"""<!DOCTYPE html>
   .chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .empty{color:var(--muted);text-align:center;margin-top:80px}
 
+  /* ── Home (landing) ── */
+  [hidden]{display:none!important}
+  .home{max-width:1000px;margin:0 auto}
+  .hero{padding:14px 4px 4px}
+  .hero h1{font-size:clamp(26px,4vw,38px);font-weight:850;letter-spacing:-.6px;margin:0 0 6px}
+  .hero p{color:var(--muted);margin:0;font-size:15px}
+  .hsection-label{font-size:12.5px;font-weight:800;color:var(--muted);letter-spacing:.04em;
+    margin:30px 4px 12px}
+  .hgrid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(248px,1fr))}
+  .feat-grid{grid-template-columns:1fr}
+  .hcard{text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    padding:18px 20px;cursor:pointer;font-family:inherit;color:var(--ink);box-shadow:var(--shadow);
+    display:flex;flex-direction:column;gap:10px;
+    transition:transform .12s ease,border-color .12s ease}
+  .hcard:hover{transform:translateY(-2px);border-color:var(--brand)}
+  .hcard.feat{background:var(--brand-soft);border-color:var(--brand)}
+  .hcard-top{display:flex;align-items:center;gap:8px}
+  .hcard-date{font-size:18px;font-weight:800;letter-spacing:-.3px}
+  .hcard.feat .hcard-date{font-size:22px}
+  .hcard-wd{font-size:13px;color:var(--muted);font-weight:600}
+  .hcard-badge{margin-left:auto;background:var(--brand);color:#fff;font-size:11px;font-weight:800;
+    padding:3px 10px;border-radius:999px}
+  .hcard-peek{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px}
+  .hcard-peek li{font-size:14px;line-height:1.5;color:var(--ink);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hcard-go{color:var(--brand);font-size:13.5px;font-weight:700;margin-top:2px}
+
   @media (max-width:760px){
     .side{position:fixed;left:0;top:0;z-index:30;transform:translateX(-100%);
       transition:transform .22s ease;box-shadow:var(--shadow)}
@@ -184,7 +213,7 @@ TEMPLATE = r"""<!DOCTYPE html>
 <div class="layout">
   <aside class="side" id="side">
     <div class="sidehead">
-      <span class="brand">📰 뉴스 스크랩</span>
+      <button class="brand" id="home-btn" title="홈으로">📰 뉴스 스크랩</button>
       <button class="collapse" id="collapse" title="목록 접기" aria-label="목록 접기">«</button>
     </div>
     <div class="brand-sub">전력·전기직 취업 준비용 데일리 브리핑</div>
@@ -195,7 +224,8 @@ TEMPLATE = r"""<!DOCTYPE html>
   </aside>
 
   <main class="main">
-    <article class="content" id="content"></article>
+    <section class="home" id="home"></section>
+    <article class="content" id="content" hidden></article>
   </main>
 </div>
 
@@ -289,7 +319,7 @@ function renderMarkdown(md){
 /* ---------- UI ---------- */
 const $ = (id) => document.getElementById(id);
 const MOBILE = () => window.matchMedia('(max-width:760px)').matches;
-let current = 0;
+let current = -1;   // -1 = 홈 화면
 
 // 날짜·요일·제목·본문 전체에서 검색
 function matches(r, q){
@@ -332,12 +362,66 @@ function highlight(q){
     node.replaceWith(span);
   });
 }
+// 각 리포트에서 헤드라인(### N. 제목)을 n개 추출 — 홈 카드 미리보기용
+function headlines(md, n){
+  const out = [];
+  for(const ln of md.split(/\r?\n/)){
+    const m = ln.match(/^###\s+(.*)$/);
+    if(m && !/오늘의 스크랩 포인트/.test(m[1])){
+      out.push(m[1].replace(/^\d+\.\s*/, '').replace(/[*]/g, '').trim());
+      if(out.length >= n) break;
+    }
+  }
+  return out;
+}
+function homeCard(i, featured){
+  const r = REPORTS[i];
+  const peek = headlines(r.markdown, featured ? 5 : 3)
+    .map(h => '<li>' + escapeHtml(h) + '</li>').join('');
+  return '<button class="hcard' + (featured ? ' feat' : '') + '" data-i="' + i + '">'
+    + '<div class="hcard-top"><span class="hcard-date">' + r.date + '</span>'
+    + '<span class="hcard-wd">(' + (r.weekday||'') + ')</span>'
+    + (featured ? '<span class="hcard-badge">최신</span>' : '')
+    + '</div><ul class="hcard-peek">' + peek + '</ul>'
+    + '<div class="hcard-go">브리핑 열기 →</div></button>';
+}
+function buildHome(){
+  let h = '<div class="hero"><h1>📰 아침 뉴스 스크랩</h1>'
+        + '<p>전력·전기직 취업 준비용 데일리 브리핑</p></div>';
+  if(REPORTS.length){
+    h += '<div class="hsection-label">오늘의 브리핑</div>'
+       + '<div class="hgrid feat-grid">' + homeCard(0, true) + '</div>';
+    if(REPORTS.length > 1){
+      h += '<div class="hsection-label">지난 브리핑</div><div class="hgrid">';
+      for(let i = 1; i < REPORTS.length; i++) h += homeCard(i, false);
+      h += '</div>';
+    }
+  } else {
+    h += '<p class="empty">아직 스크랩이 없어요.</p>';
+  }
+  const home = $('home');
+  home.innerHTML = h;
+  home.querySelectorAll('.hcard').forEach(b => {
+    b.onclick = () => select(parseInt(b.dataset.i, 10));
+  });
+}
+function showHome(){
+  current = -1;
+  $('content').hidden = true;
+  $('home').hidden = false;
+  buildHome();
+  renderList($('search').value.trim());
+  location.hash = '';
+  window.scrollTo({top:0});
+}
 function render(){
   $('content').innerHTML = renderMarkdown(REPORTS[current].markdown);
   highlight($('search').value.trim());
 }
 function select(i){
   current = i;
+  $('home').hidden = true;
+  $('content').hidden = false;
   render();
   renderList($('search').value.trim());
   window.scrollTo({top:0, behavior:'smooth'});
@@ -346,7 +430,12 @@ function select(i){
 function onSearch(){
   const q = $('search').value.trim();
   renderList(q);
-  // 지금 보는 글이 검색과 안 맞으면 첫 매칭 글로 점프, 맞으면 강조만 갱신
+  // 홈 화면에서 검색하면 첫 매칭 글로 이동
+  if(current < 0){
+    if(q){ const first = REPORTS.findIndex(r => matches(r, q)); if(first >= 0) select(first); }
+    return;
+  }
+  // 보던 글이 검색과 안 맞으면 첫 매칭 글로, 맞으면 강조만 갱신
   if(q && !matches(REPORTS[current], q)){
     const first = REPORTS.findIndex(r => matches(r, q));
     if(first >= 0){ select(first); return; }
@@ -372,6 +461,7 @@ $('search').addEventListener('input', onSearch);
 $('collapse').addEventListener('click', collapse);
 $('reopen').addEventListener('click', expand);
 $('backdrop').addEventListener('click', closeSide);
+$('home-btn').addEventListener('click', () => { showHome(); if(MOBILE()) closeSide(); });
 
 // 데스크톱 접힘 상태 복원
 try{
@@ -379,9 +469,9 @@ try{
     document.body.classList.add('collapsed');
 }catch(e){}
 
-// 해시(#날짜)로 진입 시 해당 리포트 선택
+// 해시(#날짜)가 있으면 그 리포트로, 없으면 홈 화면으로 진입
 const fromHash = REPORTS.findIndex(r => r.date === location.hash.slice(1));
-select(fromHash >= 0 ? fromHash : 0);
+if(fromHash >= 0) select(fromHash); else showHome();
 </script>
 </body>
 </html>
