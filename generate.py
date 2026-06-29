@@ -22,7 +22,26 @@ FNAME_RE = re.compile(r"뉴스스크랩_(\d{4})-(\d{2})-(\d{2})\.md$")
 WEEKDAY_KR = ["월", "화", "수", "목", "금", "토", "일"]
 
 
+def extract(md):
+    """본문에서 헤드라인(홈 미리보기용)과 검색 키워드(제목들)를 뽑는다."""
+    headlines, keywords = [], []
+    for ln in md.splitlines():
+        s = ln.strip()
+        m = re.match(r"^###\s+(.*)$", s)
+        if m and "오늘의 스크랩 포인트" not in m.group(1):
+            t = re.sub(r"^\d+\.\s*", "", m.group(1)).replace("*", "").strip()
+            if len(headlines) < 5:
+                headlines.append(t)
+            keywords.append(t)
+            continue
+        b = re.match(r"^\*\*(.+)\*\*$", s)  # 전력 섹션의 굵은 소제목
+        if b:
+            keywords.append(b.group(1).replace("*", "").strip())
+    return headlines, keywords
+
+
 def collect_reports():
+    """본문(markdown)은 내장하지 않고, 가벼운 메타데이터(manifest)만 만든다."""
     reports = []
     for p in BASE.glob("뉴스스크랩_*.md"):
         m = FNAME_RE.search(p.name)
@@ -35,14 +54,18 @@ def collect_reports():
         except ValueError:
             weekday = ""
         md = p.read_text(encoding="utf-8")
-        # 첫 번째 # 제목 라인 추출 (없으면 날짜로 대체)
         title = next(
             (ln[2:].strip() for ln in md.splitlines() if ln.startswith("# ")),
             f"아침 뉴스 스크랩 — {date_str}",
         )
-        reports.append(
-            {"date": date_str, "weekday": weekday, "title": title, "markdown": md}
-        )
+        headlines, keywords = extract(md)
+        reports.append({
+            "date": date_str,
+            "weekday": weekday,
+            "title": title,
+            "headlines": headlines,        # 홈 카드 미리보기
+            "keywords": " ".join(keywords),  # 날짜 간 검색용 (본문 대신)
+        })
     # 최신 날짜가 위로
     reports.sort(key=lambda r: r["date"], reverse=True)
     return reports
@@ -53,11 +76,11 @@ def build():
     if not reports:
         print("⚠️  뉴스스크랩_*.md 파일을 찾지 못했어요. 폴더를 확인해 주세요.")
         return 1
-    data_json = json.dumps(reports, ensure_ascii=False)
+    manifest_json = json.dumps(reports, ensure_ascii=False)
     built_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     html = (
         TEMPLATE
-        .replace("__NEWS_DATA__", data_json)
+        .replace("__MANIFEST__", manifest_json)
         .replace("__BUILT_AT__", built_at)
     )
     out = BASE / "index.html"
@@ -230,7 +253,18 @@ TEMPLATE = r"""<!DOCTYPE html>
 </div>
 
 <script>
-const REPORTS = __NEWS_DATA__;
+// 가벼운 목록만 내장(본문 X). 본문은 날짜를 열 때 해당 md 파일을 fetch.
+const MANIFEST = __MANIFEST__;
+const cache = {};   // 한 번 불러온 본문은 캐시
+function mdUrl(date){ return './' + encodeURIComponent('뉴스스크랩_' + date + '.md'); }
+async function fetchReport(i){
+  const d = MANIFEST[i].date;
+  if(cache[d] != null) return cache[d];
+  const res = await fetch(mdUrl(d));
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  cache[d] = await res.text();
+  return cache[d];
+}
 
 /* ---------- 태극기 인라인 SVG (Windows가 🇰🇷 국기 이모지를 못 그려서 직접 그림) ---------- */
 const TRI = { geon:[1,1,1], gam:[0,1,0], ri:[1,0,1], gon:[0,0,0] };
@@ -321,18 +355,18 @@ const $ = (id) => document.getElementById(id);
 const MOBILE = () => window.matchMedia('(max-width:760px)').matches;
 let current = -1;   // -1 = 홈 화면
 
-// 날짜·요일·제목·본문 전체에서 검색
+// 날짜·요일·제목·헤드라인(키워드)으로 날짜 간 검색
 function matches(r, q){
   if(!q) return true;
   q = q.toLowerCase();
   return r.date.includes(q) || (r.weekday||'').includes(q)
       || r.title.toLowerCase().includes(q)
-      || r.markdown.toLowerCase().includes(q);
+      || (r.keywords||'').toLowerCase().includes(q);
 }
 function renderList(q){
   const ul = $('datelist'); ul.innerHTML = '';
   let shown = 0;
-  REPORTS.forEach((r, i) => {
+  MANIFEST.forEach((r, i) => {
     if(!matches(r, q)) return;
     shown++;
     const li = document.createElement('li');
@@ -362,21 +396,9 @@ function highlight(q){
     node.replaceWith(span);
   });
 }
-// 각 리포트에서 헤드라인(### N. 제목)을 n개 추출 — 홈 카드 미리보기용
-function headlines(md, n){
-  const out = [];
-  for(const ln of md.split(/\r?\n/)){
-    const m = ln.match(/^###\s+(.*)$/);
-    if(m && !/오늘의 스크랩 포인트/.test(m[1])){
-      out.push(m[1].replace(/^\d+\.\s*/, '').replace(/[*]/g, '').trim());
-      if(out.length >= n) break;
-    }
-  }
-  return out;
-}
 function homeCard(i, featured){
-  const r = REPORTS[i];
-  const peek = headlines(r.markdown, featured ? 5 : 3)
+  const r = MANIFEST[i];
+  const peek = (r.headlines || []).slice(0, featured ? 5 : 3)
     .map(h => '<li>' + escapeHtml(h) + '</li>').join('');
   return '<button class="hcard' + (featured ? ' feat' : '') + '" data-i="' + i + '">'
     + '<div class="hcard-top"><span class="hcard-date">' + r.date + '</span>'
@@ -388,12 +410,12 @@ function homeCard(i, featured){
 function buildHome(){
   let h = '<div class="hero"><h1>📰 아침 뉴스 스크랩</h1>'
         + '<p>전력·전기직 취업 준비용 데일리 브리핑</p></div>';
-  if(REPORTS.length){
+  if(MANIFEST.length){
     h += '<div class="hsection-label">오늘의 브리핑</div>'
        + '<div class="hgrid feat-grid">' + homeCard(0, true) + '</div>';
-    if(REPORTS.length > 1){
+    if(MANIFEST.length > 1){
       h += '<div class="hsection-label">지난 브리핑</div><div class="hgrid">';
-      for(let i = 1; i < REPORTS.length; i++) h += homeCard(i, false);
+      for(let i = 1; i < MANIFEST.length; i++) h += homeCard(i, false);
       h += '</div>';
     }
   } else {
@@ -414,33 +436,49 @@ function showHome(){
   location.hash = '';
   window.scrollTo({top:0});
 }
-function render(){
-  $('content').innerHTML = renderMarkdown(REPORTS[current].markdown);
+// 이미 불러온(캐시된) 본문을 다시 그리고 강조만 갱신
+function rerender(){
+  if(current < 0) return;
+  const md = cache[MANIFEST[current].date];
+  if(md == null) return;
+  $('content').innerHTML = renderMarkdown(md);
   highlight($('search').value.trim());
 }
-function select(i){
+async function select(i){
   current = i;
   $('home').hidden = true;
   $('content').hidden = false;
-  render();
+  location.hash = MANIFEST[i].date;
   renderList($('search').value.trim());
   window.scrollTo({top:0, behavior:'smooth'});
-  location.hash = REPORTS[i].date;
+  if(cache[MANIFEST[i].date] == null){
+    $('content').innerHTML = '<p class="empty">불러오는 중…</p>';
+  }
+  try{
+    const md = await fetchReport(i);
+    if(current !== i) return;   // 그새 다른 날짜를 눌렀으면 무시
+    $('content').innerHTML = renderMarkdown(md);
+    highlight($('search').value.trim());
+  }catch(e){
+    if(current !== i) return;
+    $('content').innerHTML = '<p class="empty">브리핑을 불러오지 못했어요.<br>'
+      + '온라인 상태에서 다시 시도해 주세요. (로컬에서 열었다면 서버가 필요해요)</p>';
+  }
 }
 function onSearch(){
   const q = $('search').value.trim();
   renderList(q);
   // 홈 화면에서 검색하면 첫 매칭 글로 이동
   if(current < 0){
-    if(q){ const first = REPORTS.findIndex(r => matches(r, q)); if(first >= 0) select(first); }
+    if(q){ const first = MANIFEST.findIndex(r => matches(r, q)); if(first >= 0) select(first); }
     return;
   }
   // 보던 글이 검색과 안 맞으면 첫 매칭 글로, 맞으면 강조만 갱신
-  if(q && !matches(REPORTS[current], q)){
-    const first = REPORTS.findIndex(r => matches(r, q));
+  if(q && !matches(MANIFEST[current], q)){
+    const first = MANIFEST.findIndex(r => matches(r, q));
     if(first >= 0){ select(first); return; }
   }
-  render();
+  rerender();
 }
 function openSide(){ $('side').classList.add('open'); $('backdrop').classList.add('show'); }
 function closeSide(){ $('side').classList.remove('open'); $('backdrop').classList.remove('show'); }
@@ -470,7 +508,7 @@ try{
 }catch(e){}
 
 // 해시(#날짜)가 있으면 그 리포트로, 없으면 홈 화면으로 진입
-const fromHash = REPORTS.findIndex(r => r.date === location.hash.slice(1));
+const fromHash = MANIFEST.findIndex(r => r.date === location.hash.slice(1));
 if(fromHash >= 0) select(fromHash); else showHome();
 </script>
 </body>
