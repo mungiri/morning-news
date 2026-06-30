@@ -103,9 +103,37 @@
   /* ── Home (landing) ── */
   [hidden]{display:none!important}
   .home{max-width:1000px;margin:0 auto}
-  .hero{padding:14px 4px 4px}
+  .hero{position:relative;padding:26px 24px 22px;border-radius:20px;overflow:hidden;
+    background:linear-gradient(135deg,var(--brand-soft),var(--accent-soft));
+    border:1px solid var(--line);box-shadow:var(--shadow);margin-bottom:6px}
+  .hero::after{content:"";position:absolute;right:-40px;top:-44px;width:170px;height:170px;
+    background:radial-gradient(circle,var(--brand) 0%,transparent 70%);opacity:.12;pointer-events:none}
+  .hero-greet{font-size:13.5px;font-weight:700;color:var(--brand);margin:0 0 6px;letter-spacing:-.2px}
   .hero h1{font-size:clamp(26px,4vw,38px);font-weight:850;letter-spacing:-.6px;margin:0 0 6px}
   .hero p{color:var(--muted);margin:0;font-size:15px}
+  .stats{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:13px;
+    padding:10px 16px;min-width:86px;display:flex;flex-direction:column;gap:1px}
+  .stat b{font-size:20px;font-weight:850;letter-spacing:-.4px;line-height:1.15}
+  .stat span{font-size:11.5px;color:var(--muted);font-weight:600}
+
+  /* 읽음/안읽음 · 즐겨찾기 */
+  .hcard.read{opacity:.6}
+  .hcard.read:hover{opacity:1}
+  .hcard-dot{width:8px;height:8px;border-radius:50%;background:var(--brand);flex:0 0 auto;
+    box-shadow:0 0 0 3px var(--brand-soft)}
+  .hcard-star{margin-left:auto;font-size:18px;line-height:1;cursor:pointer;color:var(--muted);
+    padding:0 2px;user-select:none}
+  .hcard-star:hover{color:var(--accent)}
+  .hcard-star.on{color:var(--accent)}
+
+  /* 맨 위로 */
+  .fab{position:fixed;right:20px;bottom:20px;z-index:40;width:44px;height:44px;border-radius:50%;
+    border:1px solid var(--line);background:var(--panel);color:var(--brand);font-size:20px;
+    cursor:pointer;box-shadow:var(--shadow);display:none;align-items:center;justify-content:center;
+    font-family:inherit;line-height:1}
+  .fab.show{display:inline-flex}
+  .fab:hover{border-color:var(--brand)}
   .hsection-label{font-size:12.5px;font-weight:800;color:var(--muted);letter-spacing:.04em;
     margin:30px 4px 12px}
   .hgrid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(248px,1fr))}
@@ -120,7 +148,7 @@
   .hcard-date{font-size:18px;font-weight:800;letter-spacing:-.3px}
   .hcard.feat .hcard-date{font-size:22px}
   .hcard-wd{font-size:13px;color:var(--muted);font-weight:600}
-  .hcard-badge{margin-left:auto;background:var(--brand);color:#fff;font-size:11px;font-weight:800;
+  .hcard-badge{margin-left:8px;background:var(--brand);color:#fff;font-size:11px;font-weight:800;
     padding:3px 10px;border-radius:999px}
   .hcard-peek{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px}
   .hcard-peek li{font-size:14px;line-height:1.5;color:var(--ink);
@@ -141,6 +169,7 @@
 <body>
 <div class="backdrop" id="backdrop"></div>
 <button class="reopen" id="reopen" title="날짜 목록 열기" aria-label="날짜 목록 열기">☰</button>
+<button class="fab" id="fab" title="맨 위로" aria-label="맨 위로">↑</button>
 <div class="layout">
   <aside class="side" id="side">
     <div class="sidehead">
@@ -151,7 +180,7 @@
     <input class="search" id="search" type="search" placeholder="🔎 날짜·내용 검색 (예: 한전, 06-29)">
     <div class="scount" id="scount"></div>
     <ul class="datelist" id="datelist"></ul>
-    <div class="sidefoot">빌드: 2026-06-29 23:10</div>
+    <div class="sidefoot">빌드: 2026-06-30 09:22</div>
   </aside>
 
   <main class="main">
@@ -263,6 +292,44 @@ const $ = (id) => document.getElementById(id);
 const MOBILE = () => window.matchMedia('(max-width:760px)').matches;
 let current = -1;   // -1 = 홈 화면
 
+/* ---------- 읽음 표시 · 즐겨찾기 (localStorage) ---------- */
+const LS = {
+  get(k){ try{ return JSON.parse(localStorage.getItem(k)) || []; }catch(e){ return []; } },
+  set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+const readSet = new Set(LS.get('read-dates'));
+const markSet = new Set(LS.get('bookmarks'));
+const isRead = (d) => readSet.has(d);
+const isMark = (d) => markSet.has(d);
+function markRead(d){ if(!readSet.has(d)){ readSet.add(d); LS.set('read-dates', [...readSet]); } }
+function toggleMark(d){
+  if(markSet.has(d)) markSet.delete(d); else markSet.add(d);
+  LS.set('bookmarks', [...markSet]);
+}
+
+/* ---------- 시간대별 인사말 · 연속 기록(streak) ---------- */
+function greeting(){
+  const h = new Date().getHours();
+  if(h < 6)  return '🌙 새벽까지 고생이 많네요';
+  if(h < 11) return '🌅 좋은 아침이에요';
+  if(h < 14) return '☀️ 좋은 점심이에요';
+  if(h < 18) return '🌤️ 좋은 오후예요';
+  if(h < 22) return '🌆 좋은 저녁이에요';
+  return '🌙 늦은 시간이네요';
+}
+// 최신 날짜부터 하루씩 거슬러 끊기지 않고 이어진 브리핑 일수
+// (UTC 변환 시 KST에서 하루 밀리므로 날짜 키는 로컬 기준으로 만든다)
+function streak(){
+  if(!MANIFEST.length) return 0;
+  const have = new Set(MANIFEST.map(r => r.date));
+  const pad = (n) => String(n).padStart(2, '0');
+  const key = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  const [y, m, dd] = MANIFEST[0].date.split('-').map(Number);
+  let n = 0, d = new Date(y, m - 1, dd);
+  while(have.has(key(d))){ n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+
 // 날짜·요일·제목·헤드라인(키워드)으로 날짜 간 검색
 function matches(r, q){
   if(!q) return true;
@@ -306,24 +373,49 @@ function highlight(q){
 }
 function homeCard(i, featured){
   const r = MANIFEST[i];
+  const read = isRead(r.date), mark = isMark(r.date);
   const peek = (r.headlines || []).slice(0, featured ? 5 : 3)
     .map(h => '<li>' + escapeHtml(h) + '</li>').join('');
-  return '<button class="hcard' + (featured ? ' feat' : '') + '" data-i="' + i + '">'
-    + '<div class="hcard-top"><span class="hcard-date">' + r.date + '</span>'
+  return '<button class="hcard' + (featured ? ' feat' : '') + (read ? ' read' : '') + '" data-i="' + i + '">'
+    + '<div class="hcard-top">'
+    + (read ? '' : '<span class="hcard-dot" title="안 읽음"></span>')
+    + '<span class="hcard-date">' + r.date + '</span>'
     + '<span class="hcard-wd">(' + (r.weekday||'') + ')</span>'
+    + '<span class="hcard-star' + (mark ? ' on' : '') + '" data-star="' + i + '" '
+    +   'role="button" title="즐겨찾기" aria-label="즐겨찾기">' + (mark ? '★' : '☆') + '</span>'
     + (featured ? '<span class="hcard-badge">최신</span>' : '')
     + '</div><ul class="hcard-peek">' + peek + '</ul>'
     + '<div class="hcard-go">브리핑 열기 →</div></button>';
 }
 function buildHome(){
-  let h = '<div class="hero"><h1>📰 아침 뉴스 스크랩</h1>'
-        + '<p>전력·전기직 취업 준비용 데일리 브리핑</p></div>';
-  if(MANIFEST.length){
+  const total = MANIFEST.length;
+  const latest = total ? MANIFEST[0].date.slice(5).replace('-', '/') : '—';
+  let h = '<div class="hero">'
+        + '<div class="hero-greet">' + greeting() + '</div>'
+        + '<h1>📰 아침 뉴스 스크랩</h1>'
+        + '<p>전력·전기직 취업 준비용 데일리 브리핑</p>';
+  if(total){
+    h += '<div class="stats">'
+       + '<div class="stat"><b>' + total + '</b><span>총 브리핑</span></div>'
+       + '<div class="stat"><b>' + latest + '</b><span>최신</span></div>'
+       + '<div class="stat"><b>' + streak() + '일</b><span>연속 기록</span></div>'
+       + '</div>';
+  }
+  h += '</div>';
+
+  if(total){
+    // ⭐ 즐겨찾기 (있을 때만, 최신순 유지)
+    const marks = MANIFEST.map((r, i) => i).filter(i => isMark(MANIFEST[i].date));
+    if(marks.length){
+      h += '<div class="hsection-label">⭐ 즐겨찾기</div><div class="hgrid">';
+      marks.forEach(i => h += homeCard(i, false));
+      h += '</div>';
+    }
     h += '<div class="hsection-label">오늘의 브리핑</div>'
        + '<div class="hgrid feat-grid">' + homeCard(0, true) + '</div>';
-    if(MANIFEST.length > 1){
+    if(total > 1){
       h += '<div class="hsection-label">지난 브리핑</div><div class="hgrid">';
-      for(let i = 1; i < MANIFEST.length; i++) h += homeCard(i, false);
+      for(let i = 1; i < total; i++) h += homeCard(i, false);
       h += '</div>';
     }
   } else {
@@ -331,6 +423,14 @@ function buildHome(){
   }
   const home = $('home');
   home.innerHTML = h;
+  // 별(즐겨찾기) 토글 — 카드 열기보다 먼저 가로채기
+  home.querySelectorAll('.hcard-star').forEach(s => {
+    s.onclick = (e) => {
+      e.stopPropagation();
+      toggleMark(MANIFEST[parseInt(s.dataset.star, 10)].date);
+      buildHome();
+    };
+  });
   home.querySelectorAll('.hcard').forEach(b => {
     b.onclick = () => select(parseInt(b.dataset.i, 10));
   });
@@ -354,6 +454,7 @@ function rerender(){
 }
 async function select(i){
   current = i;
+  markRead(MANIFEST[i].date);   // 연 브리핑은 읽음 처리
   $('home').hidden = true;
   $('content').hidden = false;
   location.hash = MANIFEST[i].date;
@@ -408,6 +509,11 @@ $('collapse').addEventListener('click', collapse);
 $('reopen').addEventListener('click', expand);
 $('backdrop').addEventListener('click', closeSide);
 $('home-btn').addEventListener('click', () => { showHome(); if(MOBILE()) closeSide(); });
+
+// 맨 위로 버튼 — 스크롤 내리면 표시
+const fab = $('fab');
+window.addEventListener('scroll', () => { fab.classList.toggle('show', window.scrollY > 400); }, {passive:true});
+fab.addEventListener('click', () => window.scrollTo({top:0, behavior:'smooth'}));
 
 // 데스크톱 접힘 상태 복원
 try{
