@@ -622,9 +622,16 @@ try{
     document.body.classList.add('collapsed');
 }catch(e){}
 
-// 해시(#날짜)가 있으면 그 리포트로, 없으면 홈 화면으로 진입
-const fromHash = MANIFEST.findIndex(r => r.date === location.hash.slice(1));
-if(fromHash >= 0) select(fromHash); else showHome();
+// 해시(#날짜) ↔ 화면 동기화 — 브라우저 뒤로/앞으로 가기 지원
+function applyHash(){
+  const h = location.hash.slice(1);
+  const idx = MANIFEST.findIndex(r => r.date === h);
+  if(idx >= 0){ if(idx !== current) select(idx); }
+  else if(current !== -1){ showHome(); }
+}
+window.addEventListener('hashchange', applyHash);
+// 첫 진입: 해시(#날짜) 있으면 그 리포트로, 없으면 홈
+if(location.hash.slice(1)) applyHash(); else showHome();
 </script>
 </body>
 </html>
