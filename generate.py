@@ -250,7 +250,7 @@ TEMPLATE = r"""<!DOCTYPE html>
   .feat-grid{grid-template-columns:1fr}
   .hcard{text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:16px;
     padding:18px 20px;cursor:pointer;font-family:inherit;color:var(--ink);box-shadow:var(--shadow);
-    display:flex;flex-direction:column;gap:10px;
+    display:flex;flex-direction:column;gap:10px;min-width:0;
     transition:transform .12s ease,border-color .12s ease}
   .hcard:hover{transform:translateY(-2px);border-color:var(--brand)}
   .hcard.feat{background:var(--brand-soft);border-color:var(--brand)}
