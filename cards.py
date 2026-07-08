@@ -240,7 +240,9 @@ def build(date_str=None):
         print(f"⚠️  {md_path.name} 파일이 없어요.")
         return None
 
-    slides = [s for s in parse_slides(md_path.read_text(encoding="utf-8")) if not s["points"]]
+    all_slides = [s for s in parse_slides(md_path.read_text(encoding="utf-8")) if not s["points"]]
+    # 컨셉(전력·전기직 취업 준비)에 맞춰 "전기신문 주요뉴스" 섹션만 카드로 만든다.
+    slides = [s for s in all_slides if "전기신문" in s["category"]]
     weekday = weekday_of(date_str)
 
     out_dir = CARDS_DIR / date_str
