@@ -9,6 +9,7 @@
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -74,11 +75,22 @@ def main():
             return 1
         print(f"🚀 배포 완료 — {today} 스크랩을 푸시했습니다. Vercel이 곧 반영합니다.")
 
-    # 5) 인스타 게시 (오늘 아직 안 올렸으면)
-    try:
-        instagram_post.run(today)
-    except Exception as e:
-        print(f"⚠️  인스타 게시 실패(사이트 배포는 정상 완료됨): {e}")
+    # 5) 인스타 게시 (오늘 아직 안 올렸으면) — 일시적 실패 대비 1회 재시도
+    for attempt in (1, 2):
+        try:
+            ig_code = instagram_post.run(today)
+            if ig_code != 0:
+                print(f"⚠️  인스타 게시 실패(사이트 배포는 정상 완료됨) [시도 {attempt}] — 종료코드 {ig_code}")
+        except Exception as e:
+            ig_code = 1
+            print(f"⚠️  인스타 게시 실패(사이트 배포는 정상 완료됨) [시도 {attempt}]: {e}")
+        if ig_code == 0:
+            break
+        if attempt == 1:
+            print("↻ 잠시 후 인스타 게시 재시도합니다…")
+            time.sleep(30)
+    else:
+        print("⚠️  인스타 게시 2회 실패 — 사이트 배포는 정상 완료됨. 수동으로 python instagram_post.py 실행 필요.")
 
     return 0
 

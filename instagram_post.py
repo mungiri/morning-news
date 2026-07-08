@@ -38,7 +38,7 @@ def weekday_of(date_str):
     return WEEKDAY_KR[datetime(y, mo, d).weekday()]
 
 
-def wait_public(url, timeout=180, interval=5):
+def wait_public(url, timeout=420, interval=5):
     """카드 이미지가 Vercel에 실제로 배포돼 접근 가능해질 때까지 기다림."""
     waited = 0
     while waited <= timeout:
