@@ -133,7 +133,9 @@ def run(date_str=None):
         print(f"⚠️  {img_dir}에 카드 이미지가 없어요.")
         return 1
 
-    urls = [f"{SITE_BASE}/cards/{date_str}/{p.name}" for p in pngs]
+    # 캐시버스터: 같은 날짜라도 파일 내용이 바뀌면(재게시 등) CDN이 옛 이미지를
+    # 그대로 서빙하지 않도록 파일 수정시각을 쿼리스트링으로 붙인다.
+    urls = [f"{SITE_BASE}/cards/{date_str}/{p.name}?v={int(p.stat().st_mtime)}" for p in pngs]
 
     print(f"⏳ 배포 반영 대기 중… ({urls[0]})")
     if not wait_public(urls[0]):
