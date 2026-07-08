@@ -96,6 +96,15 @@ def build():
     out.write_text(html, encoding="utf-8")
     print(f"✅ index.html 생성 완료 — 리포트 {len(reports)}건 (최근: {reports[0]['date']})")
     print(f"   파일 위치: {out}")
+
+    mobile_html = (
+        MOBILE_TEMPLATE
+        .replace("__MANIFEST__", manifest_json)
+        .replace("__BUILT_AT__", built_at)
+    )
+    mobile_out = BASE / "mobile.html"
+    mobile_out.write_text(mobile_html, encoding="utf-8")
+    print(f"✅ mobile.html 생성 완료 (카드뉴스 스와이프)")
     return 0
 
 
@@ -291,6 +300,22 @@ TEMPLATE = r"""<!DOCTYPE html>
 </div>
 
 <script>
+// 모바일 접속 시 카드뉴스 전용 페이지(mobile.html)로 자동 이동.
+// ?desktop=1 로 들어오거나 한 번 데스크톱을 선택하면 다시 안 옮김(localStorage 기억).
+(function(){
+  try{
+    const params = new URLSearchParams(location.search);
+    if(params.get('desktop') === '1'){
+      localStorage.setItem('prefer-desktop', '1');
+      return;
+    }
+    if(localStorage.getItem('prefer-desktop') === '1') return;
+    const isMobile = window.matchMedia('(max-width:760px)').matches
+      || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if(isMobile){ location.replace('mobile.html'); }
+  }catch(e){}
+})();
+
 // 가벼운 목록만 내장(본문 X). 본문은 날짜를 열 때 해당 md 파일을 fetch.
 const MANIFEST = __MANIFEST__;
 const cache = {};   // 한 번 불러온 본문은 캐시
@@ -632,6 +657,256 @@ function applyHash(){
 window.addEventListener('hashchange', applyHash);
 // 첫 진입: 해시(#날짜) 있으면 그 리포트로, 없으면 홈
 if(location.hash.slice(1)) applyHash(); else showHome();
+</script>
+</body>
+</html>
+"""
+
+
+MOBILE_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>📰 아침 뉴스 카드</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" as="style" crossorigin
+  href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
+<style>
+  :root{
+    --bg:#f4f5f7; --panel:#ffffff; --ink:#1d2330; --muted:#6b7280;
+    --line:#e6e8ec; --brand:#2563eb; --brand-soft:#eaf1ff;
+    --accent:#f59e0b; --accent-soft:#fff7e6;
+    --shadow:0 1px 3px rgba(20,30,60,.06),0 8px 24px rgba(20,30,60,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1115; --panel:#171a21; --ink:#e7eaf0; --muted:#9aa3b2;
+      --line:#262b35; --brand:#6ea8fe; --brand-soft:#16223a;
+      --accent:#f5b13d; --accent-soft:#2a2316;
+      --shadow:0 1px 3px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;overscroll-behavior:none;overflow:hidden}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:'Pretendard Variable','Pretendard','Apple SD Gothic Neo',
+      system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;
+    -webkit-font-smoothing:antialiased; letter-spacing:-.01em;
+  }
+  a{color:inherit}
+
+  .topbar{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;align-items:center;
+    gap:8px;padding:12px 14px;padding-top:calc(12px + env(safe-area-inset-top));
+    pointer-events:none}
+  .topbar > *{pointer-events:auto}
+  .navbtn{background:var(--panel);border:1px solid var(--line);border-radius:999px;
+    width:34px;height:34px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+    color:var(--ink);font-size:15px;box-shadow:var(--shadow);cursor:pointer}
+  .navbtn:disabled{opacity:.35}
+  .navbtn.home{width:auto;padding:0 12px;font-size:12.5px;font-weight:700;color:var(--muted)}
+  .datepill{flex:1;text-align:center;font-size:13px;font-weight:800;background:var(--panel);
+    border:1px solid var(--line);border-radius:999px;padding:8px 10px;box-shadow:var(--shadow);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .datepill .wd{color:var(--muted);font-weight:600;margin-left:4px}
+
+  .deck{position:fixed;inset:0;display:flex;overflow-x:auto;overflow-y:hidden;
+    scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
+  .slide{flex:0 0 100vw;height:100vh;height:100dvh;scroll-snap-align:start;
+    scroll-snap-stop:always;display:flex;flex-direction:column;box-sizing:border-box;
+    padding:76px 22px 96px;overflow-y:auto}
+  .slide.cover{align-items:center;justify-content:center;text-align:center;
+    background:linear-gradient(135deg,var(--brand-soft),var(--accent-soft))}
+  .slide.cover h1{font-size:clamp(24px,7vw,32px);font-weight:850;letter-spacing:-.5px;margin:0 0 10px}
+  .slide.cover p{color:var(--muted);font-size:14px;margin:0 0 26px}
+  .swipe-hint{font-size:13px;color:var(--brand);font-weight:700;
+    animation:nudge 1.4s ease-in-out infinite}
+  @keyframes nudge{0%,100%{transform:translateX(0)}50%{transform:translateX(6px)}}
+
+  .cat-chip{display:inline-flex;align-self:flex-start;background:var(--brand-soft);color:var(--brand);
+    font-size:12px;font-weight:800;padding:5px 12px;border-radius:999px;margin-bottom:16px}
+  .slide.points .cat-chip{background:var(--accent-soft);color:var(--accent)}
+  .slide h2{font-size:clamp(21px,6vw,27px);font-weight:850;line-height:1.38;letter-spacing:-.4px;
+    margin:0 0 18px}
+  .slide-text p{font-size:16px;line-height:1.85;margin:0 0 14px;color:var(--ink)}
+  .slide-text ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:14px}
+  .slide-text li{font-size:15.5px;line-height:1.8}
+  .links{margin-top:auto;padding-top:18px;display:flex;flex-wrap:wrap;gap:8px}
+  .linkbtn{display:inline-flex;align-items:center;gap:6px;background:var(--panel);color:var(--brand);
+    font-size:13px;font-weight:700;padding:9px 14px;border-radius:999px;border:1px solid var(--line);
+    text-decoration:none;box-shadow:var(--shadow)}
+
+  .progress-wrap{position:fixed;left:0;right:0;bottom:0;z-index:20;
+    padding:10px 20px calc(14px + env(safe-area-inset-bottom));pointer-events:none}
+  .progress-track{height:3px;border-radius:2px;background:var(--line);overflow:hidden}
+  .progress-fill{height:100%;background:var(--brand);width:0%;transition:width .15s ease}
+  .progress-label{text-align:center;font-size:11.5px;color:var(--muted);margin-top:7px;font-weight:600}
+
+  .empty{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    color:var(--muted);text-align:center;padding:0 30px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const MANIFEST = __MANIFEST__;
+const $ = (tag) => document.createElement(tag);
+function escapeHtml(s){
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+function mdUrl(date){ return './scraps/' + encodeURIComponent('뉴스스크랩_' + date + '.md'); }
+
+/* ---------- md → 슬라이드 배열 ---------- */
+function parseSlides(md){
+  const lines = md.split(/\r?\n/);
+  let category = '';
+  let slides = [];
+  let cur = null;
+  const push = () => { if(cur){ slides.push(cur); cur = null; } };
+  for(const raw of lines){
+    const line = raw.trim();
+    if(line === '') continue;
+    let m;
+    if(/^#\s+/.test(line)) continue;
+    if(/^---+$/.test(line)) continue;
+    if((m = line.match(/^##\s+(.*)$/))){ category = m[1].trim(); continue; }
+    if((m = line.match(/^###\s+(.*)$/))){
+      push();
+      const isPoints = /오늘의 스크랩 포인트/.test(m[1]);
+      const title = m[1].replace(/^\d+\.\s*/, '').replace(/\*/g, '').trim();
+      cur = { category: isPoints ? '💡 오늘의 스크랩 포인트' : category, title, points: isPoints, blocks: [], links: [] };
+      continue;
+    }
+    if(line.startsWith('🔗')){ if(cur) cur.links.push(line.replace('🔗', '').trim()); continue; }
+    if((m = line.match(/^[-*]\s+(.*)$/))){ if(cur) cur.blocks.push({ li: m[1] }); continue; }
+    if(cur) cur.blocks.push({ p: line });
+  }
+  push();
+  return slides;
+}
+function renderBlocks(blocks){
+  let html = '', inList = false;
+  const close = () => { if(inList){ html += '</ul>'; inList = false; } };
+  blocks.forEach(b => {
+    if(b.li != null){
+      if(!inList){ html += '<ul>'; inList = true; }
+      html += '<li>' + escapeHtml(b.li) + '</li>';
+    } else {
+      close();
+      html += '<p>' + escapeHtml(b.p) + '</p>';
+    }
+  });
+  close();
+  return html;
+}
+function chipHost(url){
+  let host = url;
+  try{ host = new URL(url).hostname.replace(/^www\./, ''); }catch(e){}
+  return host;
+}
+
+/* ---------- 상태 ---------- */
+const app = document.getElementById('app');
+let dateIdx = 0;
+
+function buildShell(){
+  app.innerHTML = '';
+  const top = $('div'); top.className = 'topbar';
+  const prev = $('button'); prev.className = 'navbtn'; prev.textContent = '‹';
+  prev.title = '이전 브리핑'; prev.disabled = dateIdx >= MANIFEST.length - 1;
+  prev.onclick = () => loadDate(dateIdx + 1);
+  const pill = $('div'); pill.className = 'datepill'; pill.id = 'datepill';
+  const home = $('a'); home.className = 'navbtn home'; home.textContent = '전체목록';
+  home.href = 'index.html?desktop=1';
+  const next = $('button'); next.className = 'navbtn'; next.textContent = '›';
+  next.title = '다음 브리핑'; next.disabled = dateIdx <= 0;
+  next.onclick = () => loadDate(dateIdx - 1);
+  top.append(prev, pill, next, home);
+
+  const deck = $('div'); deck.className = 'deck'; deck.id = 'deck';
+
+  const progWrap = $('div'); progWrap.className = 'progress-wrap';
+  const track = $('div'); track.className = 'progress-track';
+  const fill = $('div'); fill.className = 'progress-fill'; fill.id = 'progress-fill';
+  track.appendChild(fill);
+  const label = $('div'); label.className = 'progress-label'; label.id = 'progress-label';
+  progWrap.append(track, label);
+
+  app.append(top, deck, progWrap);
+}
+
+function renderEmpty(){
+  app.innerHTML = '<div class="empty"><p>아직 스크랩이 없어요.<br>PC에서 먼저 브리핑을 생성해 주세요.</p></div>';
+}
+
+function showMessage(msg){
+  const deck = document.getElementById('deck');
+  deck.innerHTML = '<div class="slide" style="align-items:center;justify-content:center;text-align:center;color:var(--muted)">' + msg + '</div>';
+}
+
+function buildDeck(md, report){
+  const deck = document.getElementById('deck');
+  deck.innerHTML = '';
+  const slides = parseSlides(md);
+
+  const cover = $('section'); cover.className = 'slide cover';
+  cover.innerHTML = '<h1>📰 ' + escapeHtml(report.date) + ' (' + escapeHtml(report.weekday || '') + ')</h1>'
+    + '<p>오늘의 브리핑 · 총 ' + slides.length + '개 뉴스</p>'
+    + '<div class="swipe-hint">옆으로 넘겨서 보기 →</div>';
+  deck.appendChild(cover);
+
+  slides.forEach((s, i) => {
+    const sec = $('section'); sec.className = 'slide' + (s.points ? ' points' : '');
+    let html = '<span class="cat-chip">' + escapeHtml(s.category || '') + '</span>';
+    html += '<h2>' + escapeHtml(s.title) + '</h2>';
+    html += '<div class="slide-text">' + renderBlocks(s.blocks) + '</div>';
+    if(s.links.length){
+      html += '<div class="links">' + s.links.map(u =>
+        '<a class="linkbtn" href="' + escapeHtml(u) + '" target="_blank" rel="noopener">🔗 ' + escapeHtml(chipHost(u)) + '</a>'
+      ).join('') + '</div>';
+    }
+    sec.innerHTML = html;
+    deck.appendChild(sec);
+  });
+
+  const total = slides.length + 1;
+  const fill = document.getElementById('progress-fill');
+  const label = document.getElementById('progress-label');
+  function updateProgress(){
+    const i = Math.round(deck.scrollLeft / window.innerWidth);
+    fill.style.width = ((i + 1) / total * 100) + '%';
+    label.textContent = i === 0 ? '표지' : (i + ' / ' + slides.length);
+  }
+  deck.addEventListener('scroll', updateProgress, { passive: true });
+  deck.scrollLeft = 0;
+  updateProgress();
+
+  document.onkeydown = (e) => {
+    if(e.key === 'ArrowRight') deck.scrollBy({ left: window.innerWidth, behavior: 'smooth' });
+    if(e.key === 'ArrowLeft') deck.scrollBy({ left: -window.innerWidth, behavior: 'smooth' });
+  };
+}
+
+function loadDate(idx){
+  if(idx < 0 || idx >= MANIFEST.length) return;
+  dateIdx = idx;
+  const report = MANIFEST[idx];
+  buildShell();
+  document.getElementById('datepill').innerHTML =
+    escapeHtml(report.date) + '<span class="wd">(' + escapeHtml(report.weekday || '') + ')</span>';
+  showMessage('불러오는 중…');
+  fetch(mdUrl(report.date))
+    .then(res => { if(!res.ok) throw new Error('HTTP ' + res.status); return res.text(); })
+    .then(md => buildDeck(md, report))
+    .catch(() => showMessage('브리핑을 불러오지 못했어요.<br>온라인 상태에서 다시 시도해 주세요.'));
+}
+
+if(!MANIFEST.length){
+  renderEmpty();
+} else {
+  loadDate(0);
+}
 </script>
 </body>
 </html>
