@@ -3,6 +3,9 @@
 __pycache__/
 *.pyc
 
+# 인스타 API 시크릿 (절대 커밋 금지)
+.env
+
 # OS
 Thumbs.db
 .DS_Store

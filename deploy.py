@@ -13,6 +13,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from generate import build  # generate.py 의 빌드 함수 재사용
+import cards
+import instagram_post
 
 BASE = Path(__file__).resolve().parent
 KST = timezone(timedelta(hours=9))
@@ -47,28 +49,37 @@ def main():
     # 0) 이전 실행 잔여 잠금 파일 자동 정리
     clear_stale_locks()
 
-    # 1) index.html 재빌드
+    # 1) index.html / mobile.html 재빌드
     if build() != 0:
         print("⚠️  빌드 실패 — 배포 중단")
         return 1
 
+    # 1-1) 인스타 카드뉴스 이미지 생성
+    today = datetime.now(KST).date().isoformat()
+    cards.build(today)
+
     # 2) 변경사항 스테이징
     git("add", "-A")
 
-    # 3) 변경 없으면 종료
-    if git("diff", "--cached", "--quiet", check=False).returncode == 0:
+    # 3) 변경 없으면 종료 (카드/사이트 둘 다 이미 최신)
+    no_changes = git("diff", "--cached", "--quiet", check=False).returncode == 0
+    if no_changes:
         print("ℹ️  변경된 내용이 없어 배포를 건너뜁니다.")
-        return 0
+    else:
+        # 4) 커밋 & 푸시 (날짜는 항상 한국시간 기준)
+        git("commit", "-m", f"뉴스 {today}")
+        push = git("push", check=False)
+        if push.returncode != 0:
+            print("⚠️  push 실패:\n" + (push.stderr or push.stdout))
+            return 1
+        print(f"🚀 배포 완료 — {today} 스크랩을 푸시했습니다. Vercel이 곧 반영합니다.")
 
-    # 4) 커밋 & 푸시 (날짜는 항상 한국시간 기준)
-    today = datetime.now(KST).date().isoformat()
-    git("commit", "-m", f"뉴스 {today}")
-    push = git("push", check=False)
-    if push.returncode != 0:
-        print("⚠️  push 실패:\n" + (push.stderr or push.stdout))
-        return 1
+    # 5) 인스타 게시 (오늘 아직 안 올렸으면)
+    try:
+        instagram_post.run(today)
+    except Exception as e:
+        print(f"⚠️  인스타 게시 실패(사이트 배포는 정상 완료됨): {e}")
 
-    print(f"🚀 배포 완료 — {today} 스크랩을 푸시했습니다. Vercel이 곧 반영합니다.")
     return 0
 
 
