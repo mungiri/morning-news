@@ -166,6 +166,23 @@ def run(date_str=None):
     return 0
 
 
+def main_with_retry(date_str, attempts=3, backoff=30):
+    """백그라운드로 던져진 프로세스라 시간 제약이 없으니, 실패해도 여유있게 재시도."""
+    for attempt in range(1, attempts + 1):
+        try:
+            code = run(date_str)
+        except Exception as e:
+            code = 1
+            print(f"⚠️  실패 [시도 {attempt}/{attempts}]: {e}")
+        if code == 0:
+            return 0
+        if attempt < attempts:
+            print(f"↻ {backoff}초 후 재시도합니다… [{attempt}/{attempts}]")
+            time.sleep(backoff)
+    print(f"❌ {attempts}회 모두 실패 — 수동으로 python instagram_post.py 실행 필요.")
+    return 1
+
+
 if __name__ == "__main__":
     date_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    sys.exit(run(date_arg))
+    sys.exit(main_with_retry(date_arg or latest_card_date()))
