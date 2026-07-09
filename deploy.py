@@ -14,6 +14,7 @@ from pathlib import Path
 
 from generate import build  # generate.py 의 빌드 함수 재사용
 import cards
+import instagram_post
 
 BASE = Path(__file__).resolve().parent
 KST = timezone(timedelta(hours=9))
@@ -73,18 +74,17 @@ def main():
             return 1
         print(f"🚀 배포 완료 — {today} 스크랩을 푸시했습니다. Vercel이 곧 반영합니다.")
 
-    # 5) 인스타 게시 — Vercel 반영 대기(수 분 소요) 때문에 deploy.py 안에서 기다리지 않고
-    #    완전히 분리된 백그라운드 프로세스로 던져둔다. 호출한 쪽(스케줄 작업 등)이
-    #    빨리 끝나야 해서 타임아웃에 걸리더라도, 이 프로세스는 알아서 끝까지 진행된다.
-    log_path = BASE / "cards" / today / "instagram_post.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(log_path, "a", encoding="utf-8") as logf:
-        subprocess.Popen(
-            [sys.executable, str(BASE / "instagram_post.py"), today],
-            cwd=BASE, stdout=logf, stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL, start_new_session=True,
-        )
-    print(f"🕊️  인스타 게시는 백그라운드로 넘겼습니다 (로그: {log_path.relative_to(BASE)})")
+    # 5) 인스타 게시 — 백그라운드로 던지면 호출 환경(스케줄 작업 컨테이너 등)이
+    #    끝날 때 같이 죽어버리는 경우가 있어, 그냥 여기서 바로 동기 실행한다.
+    #    (이 사이트는 빌드 단계 없는 정적 사이트라 Vercel 반영이 보통 몇 초 안에 끝나서
+    #    전체 과정이 명령 타임아웃 안에 들어온다.)
+    try:
+        ig_code = instagram_post.run(today)
+        if ig_code != 0:
+            print(f"⚠️  인스타 게시 실패(사이트 배포는 정상 완료됨) — 종료코드 {ig_code}. "
+                  f"python instagram_post.py 로 수동 재시도 가능.")
+    except Exception as e:
+        print(f"⚠️  인스타 게시 실패(사이트 배포는 정상 완료됨): {e}")
 
     return 0
 

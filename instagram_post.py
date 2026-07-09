@@ -38,7 +38,7 @@ def weekday_of(date_str):
     return WEEKDAY_KR[datetime(y, mo, d).weekday()]
 
 
-def wait_public(url, timeout=420, interval=5):
+def wait_public(url, timeout=20, interval=2):
     """카드 이미지가 Vercel에 실제로 배포돼 접근 가능해질 때까지 기다림."""
     waited = 0
     while waited <= timeout:
@@ -78,7 +78,7 @@ def create_carousel(children_ids, caption, ig_id, token):
     return data["id"]
 
 
-def wait_container_ready(container_id, token, timeout=120, interval=5):
+def wait_container_ready(container_id, token, timeout=20, interval=2):
     waited = 0
     while waited <= timeout:
         r = requests.get(f"{GRAPH}/{container_id}", params={
@@ -166,23 +166,8 @@ def run(date_str=None):
     return 0
 
 
-def main_with_retry(date_str, attempts=3, backoff=30):
-    """백그라운드로 던져진 프로세스라 시간 제약이 없으니, 실패해도 여유있게 재시도."""
-    for attempt in range(1, attempts + 1):
-        try:
-            code = run(date_str)
-        except Exception as e:
-            code = 1
-            print(f"⚠️  실패 [시도 {attempt}/{attempts}]: {e}")
-        if code == 0:
-            return 0
-        if attempt < attempts:
-            print(f"↻ {backoff}초 후 재시도합니다… [{attempt}/{attempts}]")
-            time.sleep(backoff)
-    print(f"❌ {attempts}회 모두 실패 — 수동으로 python instagram_post.py 실행 필요.")
-    return 1
-
-
 if __name__ == "__main__":
+    # 이 스크립트를 부르는 쪽(스케줄 작업 등)이 명령 하나당 시간제한을 두는 경우가 있어
+    # 재시도 없이 한 번만 빠르게 시도하고 끝낸다. 실패하면 그 쪽에서 다시 호출하면 됨.
     date_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    sys.exit(main_with_retry(date_arg or latest_card_date()))
+    sys.exit(run(date_arg))
