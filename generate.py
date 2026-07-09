@@ -303,17 +303,19 @@ TEMPLATE = r"""<!DOCTYPE html>
 // 모바일 접속 시 카드뉴스 전용 페이지(mobile.html)로 자동 이동.
 // ?desktop=1 로 들어오거나 한 번 데스크톱을 선택하면 다시 안 옮김(localStorage 기억).
 (function(){
-  try{
-    const params = new URLSearchParams(location.search);
-    if(params.get('desktop') === '1'){
-      localStorage.setItem('prefer-desktop', '1');
-      return;
-    }
-    if(localStorage.getItem('prefer-desktop') === '1') return;
-    const isMobile = window.matchMedia('(max-width:760px)').matches
-      || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    if(isMobile){ location.replace('mobile.html'); }
-  }catch(e){}
+  const params = new URLSearchParams(location.search);
+  if(params.get('desktop') === '1'){
+    try{ localStorage.setItem('prefer-desktop', '1'); }catch(e){}
+    return;
+  }
+  // localStorage가 막힌 브라우저(인스타 인앱 브라우저 등)에서도
+  // '데스크톱 기억' 기능만 못 쓸 뿐, 모바일 리다이렉트 자체는 항상 되게 분리.
+  let preferDesktop = false;
+  try{ preferDesktop = localStorage.getItem('prefer-desktop') === '1'; }catch(e){}
+  if(preferDesktop) return;
+  const isMobile = window.matchMedia('(max-width:760px)').matches
+    || /Android|iPhone|iPad|iPod|Instagram/i.test(navigator.userAgent);
+  if(isMobile){ location.replace('mobile.html'); }
 })();
 
 // 가벼운 목록만 내장(본문 X). 본문은 날짜를 열 때 해당 md 파일을 fetch.
