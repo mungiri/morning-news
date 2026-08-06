@@ -747,6 +747,12 @@ MOBILE_TEMPLATE = r"""<!DOCTYPE html>
 
   .empty{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
     color:var(--muted);text-align:center;padding:0 30px}
+
+  .ttsbtn{position:fixed;right:16px;bottom:calc(96px + env(safe-area-inset-bottom));z-index:25;
+    width:52px;height:52px;border-radius:50%;background:var(--brand);color:#fff;border:none;
+    box-shadow:var(--shadow);font-size:21px;display:flex;align-items:center;justify-content:center;
+    cursor:pointer}
+  .ttsbtn.playing{background:var(--accent)}
 </style>
 </head>
 <body>
@@ -808,6 +814,53 @@ function chipHost(url){
   return host;
 }
 
+/* ---------- 음성으로 듣기 (Web Speech API) ---------- */
+const synth = window.speechSynthesis;
+let ttsPlaying = false;
+let ttsTargetLeft = 0;
+let ttsScrollDebounce = null;
+let ttsKeepAlive = null;
+let currentSlides = [];
+
+function slideSpeechText(s){
+  const parts = [s.title];
+  s.blocks.forEach(b => parts.push(b.li != null ? b.li : b.p));
+  return parts.join('. ');
+}
+function speakIndex(i){
+  const deck = document.getElementById('deck');
+  if(!ttsPlaying) return;
+  if(i < 0 || i >= currentSlides.length){ stopTTS(); return; }
+  ttsTargetLeft = (i + 1) * window.innerWidth;
+  deck.scrollLeft = ttsTargetLeft;
+  synth.cancel();
+  const utter = new SpeechSynthesisUtterance(slideSpeechText(currentSlides[i]));
+  utter.lang = 'ko-KR';
+  utter.rate = 1.05;
+  utter.onend = () => { if(ttsPlaying) speakIndex(i + 1); };
+  utter.onerror = () => stopTTS();
+  synth.speak(utter);
+}
+function startTTS(){
+  if(!synth || !currentSlides.length) return;
+  ttsPlaying = true;
+  const btn = document.getElementById('ttsbtn');
+  if(btn){ btn.textContent = '⏸'; btn.classList.add('playing'); }
+  const deck = document.getElementById('deck');
+  const visible = Math.round(deck.scrollLeft / window.innerWidth);
+  const startIdx = visible <= 0 ? 0 : Math.min(visible - 1, currentSlides.length - 1);
+  ttsKeepAlive = setInterval(() => { if(synth.speaking) synth.resume(); }, 5000);
+  speakIndex(startIdx);
+}
+function stopTTS(){
+  ttsPlaying = false;
+  if(synth) synth.cancel();
+  if(ttsKeepAlive){ clearInterval(ttsKeepAlive); ttsKeepAlive = null; }
+  const btn = document.getElementById('ttsbtn');
+  if(btn){ btn.textContent = '🔊'; btn.classList.remove('playing'); }
+}
+function toggleTTS(){ ttsPlaying ? stopTTS() : startTTS(); }
+
 /* ---------- 상태 ---------- */
 const app = document.getElementById('app');
 let dateIdx = 0;
@@ -836,6 +889,13 @@ function buildShell(){
   progWrap.append(track, label);
 
   app.append(top, deck, progWrap);
+
+  if(synth){
+    const ttsBtn = $('button'); ttsBtn.className = 'ttsbtn'; ttsBtn.id = 'ttsbtn';
+    ttsBtn.textContent = '🔊'; ttsBtn.title = '음성으로 듣기';
+    ttsBtn.onclick = toggleTTS;
+    app.appendChild(ttsBtn);
+  }
 }
 
 function renderEmpty(){
@@ -848,9 +908,11 @@ function showMessage(msg){
 }
 
 function buildDeck(md, report){
+  stopTTS();
   const deck = document.getElementById('deck');
   deck.innerHTML = '';
   const slides = parseSlides(md);
+  currentSlides = slides;
 
   const cover = $('section'); cover.className = 'slide cover';
   cover.innerHTML = '<h1>📰 ' + escapeHtml(report.date) + ' (' + escapeHtml(report.weekday || '') + ')</h1>'
@@ -880,7 +942,15 @@ function buildDeck(md, report){
     fill.style.width = ((i + 1) / total * 100) + '%';
     label.textContent = i === 0 ? '표지' : (i + ' / ' + slides.length);
   }
-  deck.addEventListener('scroll', updateProgress, { passive: true });
+  deck.addEventListener('scroll', () => {
+    updateProgress();
+    if(ttsPlaying){
+      clearTimeout(ttsScrollDebounce);
+      ttsScrollDebounce = setTimeout(() => {
+        if(ttsPlaying && Math.abs(deck.scrollLeft - ttsTargetLeft) > 20) stopTTS();
+      }, 250);
+    }
+  }, { passive: true });
   deck.scrollLeft = 0;
   updateProgress();
 
@@ -892,6 +962,7 @@ function buildDeck(md, report){
 
 function loadDate(idx){
   if(idx < 0 || idx >= MANIFEST.length) return;
+  stopTTS();
   dateIdx = idx;
   const report = MANIFEST[idx];
   buildShell();

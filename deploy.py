@@ -13,8 +13,6 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from generate import build  # generate.py 의 빌드 함수 재사용
-import cards
-import instagram_post
 
 BASE = Path(__file__).resolve().parent
 KST = timezone(timedelta(hours=9))
@@ -54,9 +52,7 @@ def main():
         print("⚠️  빌드 실패 — 배포 중단")
         return 1
 
-    # 1-1) 인스타 카드뉴스 이미지 생성
     today = datetime.now(KST).date().isoformat()
-    cards.build(today)
 
     # 2) 변경사항 스테이징
     git("add", "-A")
@@ -73,18 +69,6 @@ def main():
             print("⚠️  push 실패:\n" + (push.stderr or push.stdout))
             return 1
         print(f"🚀 배포 완료 — {today} 스크랩을 푸시했습니다. Vercel이 곧 반영합니다.")
-
-    # 5) 인스타 게시 — 백그라운드로 던지면 호출 환경(스케줄 작업 컨테이너 등)이
-    #    끝날 때 같이 죽어버리는 경우가 있어, 그냥 여기서 바로 동기 실행한다.
-    #    (이 사이트는 빌드 단계 없는 정적 사이트라 Vercel 반영이 보통 몇 초 안에 끝나서
-    #    전체 과정이 명령 타임아웃 안에 들어온다.)
-    try:
-        ig_code = instagram_post.run(today)
-        if ig_code != 0:
-            print(f"⚠️  인스타 게시 실패(사이트 배포는 정상 완료됨) — 종료코드 {ig_code}. "
-                  f"python instagram_post.py 로 수동 재시도 가능.")
-    except Exception as e:
-        print(f"⚠️  인스타 게시 실패(사이트 배포는 정상 완료됨): {e}")
 
     return 0
 
