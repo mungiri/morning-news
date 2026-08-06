@@ -147,25 +147,25 @@ function chipHost(url){
   return host;
 }
 
-/* ---------- 음성으로 듣기 (Web Speech API) ---------- */
+/* ---------- 음성으로 듣기 ----------
+   1순위: 미리 생성해 둔 자연스러운 음성 파일(audio/<date>/<n>.mp3)
+   2순위(파일 없는 옛날 날짜 등): 브라우저 내장 TTS로 자동 대체 */
 const synth = window.speechSynthesis;
 let ttsPlaying = false;
 let ttsTargetLeft = 0;
 let ttsScrollDebounce = null;
-let ttsKeepAlive = null;
+let ttsAudioEl = null;
 let currentSlides = [];
+let currentReportDate = '';
 
+function audioUrl(date, n){ return './audio/' + encodeURIComponent(date) + '/' + n + '.mp3'; }
 function slideSpeechText(s){
   const parts = [s.title];
   s.blocks.forEach(b => parts.push(b.li != null ? b.li : b.p));
   return parts.join('. ');
 }
-function speakIndex(i){
-  const deck = document.getElementById('deck');
-  if(!ttsPlaying) return;
-  if(i < 0 || i >= currentSlides.length){ stopTTS(); return; }
-  ttsTargetLeft = (i + 1) * window.innerWidth;
-  deck.scrollLeft = ttsTargetLeft;
+function speakSynthFallback(i){
+  if(!synth){ stopTTS(); return; }
   synth.cancel();
   const utter = new SpeechSynthesisUtterance(slideSpeechText(currentSlides[i]));
   utter.lang = 'ko-KR';
@@ -174,21 +174,38 @@ function speakIndex(i){
   utter.onerror = () => stopTTS();
   synth.speak(utter);
 }
+function playAudioSlide(i){
+  const el = new Audio(audioUrl(currentReportDate, i + 1));
+  ttsAudioEl = el;
+  let settled = false;
+  el.onended = () => { if(ttsPlaying) speakIndex(i + 1); };
+  el.onerror = () => { if(!settled){ settled = true; speakSynthFallback(i); } };
+  el.play().then(() => { settled = true; }).catch(() => {
+    if(!settled){ settled = true; speakSynthFallback(i); }
+  });
+}
+function speakIndex(i){
+  const deck = document.getElementById('deck');
+  if(!ttsPlaying) return;
+  if(i < 0 || i >= currentSlides.length){ stopTTS(); return; }
+  ttsTargetLeft = (i + 1) * window.innerWidth;
+  deck.scrollLeft = ttsTargetLeft;
+  playAudioSlide(i);
+}
 function startTTS(){
-  if(!synth || !currentSlides.length) return;
+  if(!currentSlides.length || (!synth && typeof Audio === 'undefined')) return;
   ttsPlaying = true;
   const btn = document.getElementById('ttsbtn');
   if(btn){ btn.textContent = '⏸'; btn.classList.add('playing'); }
   const deck = document.getElementById('deck');
   const visible = Math.round(deck.scrollLeft / window.innerWidth);
   const startIdx = visible <= 0 ? 0 : Math.min(visible - 1, currentSlides.length - 1);
-  ttsKeepAlive = setInterval(() => { if(synth.speaking) synth.resume(); }, 5000);
   speakIndex(startIdx);
 }
 function stopTTS(){
   ttsPlaying = false;
   if(synth) synth.cancel();
-  if(ttsKeepAlive){ clearInterval(ttsKeepAlive); ttsKeepAlive = null; }
+  if(ttsAudioEl){ ttsAudioEl.onended = null; ttsAudioEl.onerror = null; ttsAudioEl.pause(); ttsAudioEl = null; }
   const btn = document.getElementById('ttsbtn');
   if(btn){ btn.textContent = '🔊'; btn.classList.remove('playing'); }
 }
@@ -246,6 +263,7 @@ function buildDeck(md, report){
   deck.innerHTML = '';
   const slides = parseSlides(md);
   currentSlides = slides;
+  currentReportDate = report.date;
 
   const cover = $('section'); cover.className = 'slide cover';
   cover.innerHTML = '<h1>📰 ' + escapeHtml(report.date) + ' (' + escapeHtml(report.weekday || '') + ')</h1>'

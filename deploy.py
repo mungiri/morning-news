@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from generate import build  # generate.py 의 빌드 함수 재사용
+import tts
 
 BASE = Path(__file__).resolve().parent
 KST = timezone(timedelta(hours=9))
@@ -53,6 +54,12 @@ def main():
         return 1
 
     today = datetime.now(KST).date().isoformat()
+
+    # 1-1) 오늘자 카드 음성(mp3) 생성 — 실패해도 사이트 배포는 계속 진행
+    try:
+        tts.build(today)
+    except Exception as e:
+        print(f"⚠️  음성 생성 실패(사이트 배포는 계속 진행): {e}")
 
     # 2) 변경사항 스테이징
     git("add", "-A")
