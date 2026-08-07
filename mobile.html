@@ -72,6 +72,16 @@
     font-size:13px;font-weight:700;padding:9px 14px;border-radius:999px;border:1px solid var(--line);
     text-decoration:none;box-shadow:var(--shadow)}
 
+  .slide.list{padding-bottom:96px}
+  .artlist{display:flex;flex-direction:column}
+  .artrow{display:flex;align-items:center;gap:10px;padding:13px 2px;border-bottom:1px solid var(--line);
+    cursor:pointer}
+  .artrow:last-child{border-bottom:none}
+  .artrow .dot{width:6px;height:6px;border-radius:50%;background:var(--brand);flex:0 0 auto}
+  .artrow .t{flex:1;font-size:14.5px;font-weight:600;line-height:1.4;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .artrow .arrow{color:var(--muted);font-size:14px;flex:0 0 auto}
+
   .progress-wrap{position:fixed;left:0;right:0;bottom:0;z-index:20;
     padding:10px 20px calc(14px + env(safe-area-inset-bottom));pointer-events:none}
   .progress-track{height:3px;border-radius:2px;background:var(--line);overflow:hidden}
@@ -80,12 +90,6 @@
 
   .empty{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
     color:var(--muted);text-align:center;padding:0 30px}
-
-  .ttsbtn{position:fixed;right:16px;bottom:calc(96px + env(safe-area-inset-bottom));z-index:25;
-    width:52px;height:52px;border-radius:50%;background:var(--brand);color:#fff;border:none;
-    box-shadow:var(--shadow);font-size:21px;display:flex;align-items:center;justify-content:center;
-    cursor:pointer}
-  .ttsbtn.playing{background:var(--accent)}
 </style>
 </head>
 <body>
@@ -147,73 +151,10 @@ function chipHost(url){
   return host;
 }
 
-/* ---------- 음성으로 듣기 ----------
-   1순위: 미리 생성해 둔 자연스러운 음성 파일(audio/<date>/<n>.mp3)
-   2순위(파일 없는 옛날 날짜 등): 브라우저 내장 TTS로 자동 대체 */
-const synth = window.speechSynthesis;
-let ttsPlaying = false;
-let ttsTargetLeft = 0;
-let ttsScrollDebounce = null;
-let ttsAudioEl = null;
-let currentSlides = [];
-let currentReportDate = '';
-
-function audioUrl(date, n){ return './audio/' + encodeURIComponent(date) + '/' + n + '.mp3'; }
-function slideSpeechText(s){
-  const parts = [s.title];
-  s.blocks.forEach(b => parts.push(b.li != null ? b.li : b.p));
-  return parts.join('. ');
-}
-function speakSynthFallback(i){
-  if(!synth){ stopTTS(); return; }
-  synth.cancel();
-  const utter = new SpeechSynthesisUtterance(slideSpeechText(currentSlides[i]));
-  utter.lang = 'ko-KR';
-  utter.rate = 1.05;
-  utter.onend = () => { if(ttsPlaying) speakIndex(i + 1); };
-  utter.onerror = () => stopTTS();
-  synth.speak(utter);
-}
-function playAudioSlide(i){
-  const el = new Audio(audioUrl(currentReportDate, i + 1));
-  ttsAudioEl = el;
-  let settled = false;
-  el.onended = () => { if(ttsPlaying) speakIndex(i + 1); };
-  el.onerror = () => { if(!settled){ settled = true; speakSynthFallback(i); } };
-  el.play().then(() => { settled = true; }).catch(() => {
-    if(!settled){ settled = true; speakSynthFallback(i); }
-  });
-}
-function speakIndex(i){
-  const deck = document.getElementById('deck');
-  if(!ttsPlaying) return;
-  if(i < 0 || i >= currentSlides.length){ stopTTS(); return; }
-  ttsTargetLeft = (i + 1) * window.innerWidth;
-  deck.scrollLeft = ttsTargetLeft;
-  playAudioSlide(i);
-}
-function startTTS(){
-  if(!currentSlides.length || (!synth && typeof Audio === 'undefined')) return;
-  ttsPlaying = true;
-  const btn = document.getElementById('ttsbtn');
-  if(btn){ btn.textContent = '⏸'; btn.classList.add('playing'); }
-  const deck = document.getElementById('deck');
-  const visible = Math.round(deck.scrollLeft / window.innerWidth);
-  const startIdx = visible <= 0 ? 0 : Math.min(visible - 1, currentSlides.length - 1);
-  speakIndex(startIdx);
-}
-function stopTTS(){
-  ttsPlaying = false;
-  if(synth) synth.cancel();
-  if(ttsAudioEl){ ttsAudioEl.onended = null; ttsAudioEl.onerror = null; ttsAudioEl.pause(); ttsAudioEl = null; }
-  const btn = document.getElementById('ttsbtn');
-  if(btn){ btn.textContent = '🔊'; btn.classList.remove('playing'); }
-}
-function toggleTTS(){ ttsPlaying ? stopTTS() : startTTS(); }
-
 /* ---------- 상태 ---------- */
 const app = document.getElementById('app');
 let dateIdx = 0;
+let currentSlides = [];
 
 function buildShell(){
   app.innerHTML = '';
@@ -239,13 +180,6 @@ function buildShell(){
   progWrap.append(track, label);
 
   app.append(top, deck, progWrap);
-
-  if(synth){
-    const ttsBtn = $('button'); ttsBtn.className = 'ttsbtn'; ttsBtn.id = 'ttsbtn';
-    ttsBtn.textContent = '🔊'; ttsBtn.title = '음성으로 듣기';
-    ttsBtn.onclick = toggleTTS;
-    app.appendChild(ttsBtn);
-  }
 }
 
 function renderEmpty(){
@@ -258,18 +192,31 @@ function showMessage(msg){
 }
 
 function buildDeck(md, report){
-  stopTTS();
   const deck = document.getElementById('deck');
   deck.innerHTML = '';
   const slides = parseSlides(md);
   currentSlides = slides;
-  currentReportDate = report.date;
 
   const cover = $('section'); cover.className = 'slide cover';
   cover.innerHTML = '<h1>📰 ' + escapeHtml(report.date) + ' (' + escapeHtml(report.weekday || '') + ')</h1>'
     + '<p>오늘의 브리핑 · 총 ' + slides.length + '개 뉴스</p>'
     + '<div class="swipe-hint">옆으로 넘겨서 보기 →</div>';
   deck.appendChild(cover);
+
+  const list = $('section'); list.className = 'slide list';
+  let listHtml = '<h2>📋 오늘의 기사 목록</h2>';
+  listHtml += '<div class="artlist">' + slides.map((s, i) =>
+    '<div class="artrow" data-idx="' + i + '">'
+    + '<span class="dot"></span>'
+    + '<span class="t">' + escapeHtml(s.title) + '</span>'
+    + '<span class="arrow">›</span>'
+    + '</div>'
+  ).join('') + '</div>';
+  list.innerHTML = listHtml;
+  deck.appendChild(list);
+  list.querySelectorAll('.artrow').forEach(row => {
+    row.onclick = () => { deck.scrollLeft = (Number(row.dataset.idx) + 2) * window.innerWidth; };
+  });
 
   slides.forEach((s, i) => {
     const sec = $('section'); sec.className = 'slide' + (s.points ? ' points' : '');
@@ -285,23 +232,15 @@ function buildDeck(md, report){
     deck.appendChild(sec);
   });
 
-  const total = slides.length + 1;
+  const total = slides.length + 2;
   const fill = document.getElementById('progress-fill');
   const label = document.getElementById('progress-label');
   function updateProgress(){
     const i = Math.round(deck.scrollLeft / window.innerWidth);
     fill.style.width = ((i + 1) / total * 100) + '%';
-    label.textContent = i === 0 ? '표지' : (i + ' / ' + slides.length);
+    label.textContent = i === 0 ? '표지' : i === 1 ? '목록' : ((i - 1) + ' / ' + slides.length);
   }
-  deck.addEventListener('scroll', () => {
-    updateProgress();
-    if(ttsPlaying){
-      clearTimeout(ttsScrollDebounce);
-      ttsScrollDebounce = setTimeout(() => {
-        if(ttsPlaying && Math.abs(deck.scrollLeft - ttsTargetLeft) > 20) stopTTS();
-      }, 250);
-    }
-  }, { passive: true });
+  deck.addEventListener('scroll', updateProgress, { passive: true });
   deck.scrollLeft = 0;
   updateProgress();
 
@@ -313,7 +252,6 @@ function buildDeck(md, report){
 
 function loadDate(idx){
   if(idx < 0 || idx >= MANIFEST.length) return;
-  stopTTS();
   dateIdx = idx;
   const report = MANIFEST[idx];
   buildShell();
